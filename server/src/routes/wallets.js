@@ -91,4 +91,22 @@ router.post('/withdraw', async (req, res, next) => {
   }
 });
 
+router.post('/deposit', async (req, res, next) => {
+  const { wallet_id, amount } = req.body;
+  if (!isValidId(wallet_id)) return res.status(400).json({ message: 'Invalid wallet id' });
+  if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
+  try {
+    const wallet = await Wallet.findById(wallet_id);
+    if (!wallet) return res.status(404).json({ message: 'Wallet not found' });
+    wallet.balance += amount;
+    wallet.last_update = new Date();
+    await wallet.save();
+    const transaction = new Transaction({ wallet_source_id: null, wallet_target_id: wallet_id, amount, transaction_type: 'income', status: 'success', order_id: null });
+    await transaction.save();
+    res.status(201).json({ wallet, transaction });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

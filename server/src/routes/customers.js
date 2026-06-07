@@ -8,8 +8,6 @@ const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 router.get('/', async (req, res, next) => {
   try {
     const customers = await Customer.find();
-    console.info(`[customers] fetched ${customers.length} items`);
-    console.debug(customers);
     res.json(customers);
   } catch (err) {
     next(err);

@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
+const Wallet = require('../models/Wallet');
+const Worker = require('../models/Worker');
+const Transaction = require('../models/Transaction');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -37,6 +40,34 @@ router.patch('/:id/status', async (req, res, next) => {
   try {
     const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true }).populate('customer_id').populate('worker_id').populate('service_id');
     if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    if (status === 'completed' && order.worker_id && order.amount) {
+      try {
+        const worker = await Worker.findById(order.worker_id._id || order.worker_id);
+        if (worker) {
+          const walletIds = [worker.wallet_credit_id, worker.wallet_personal_id].filter(Boolean);
+          for (const walletId of walletIds) {
+            const wallet = await Wallet.findById(walletId);
+            if (wallet) {
+              wallet.balance += order.amount;
+              wallet.last_update = new Date();
+              await wallet.save();
+              await Transaction.create({
+                wallet_source_id: null,
+                wallet_target_id: walletId,
+                amount: order.amount,
+                transaction_type: 'income',
+                order_id: order._id,
+                status: 'success'
+              });
+            }
+          }
+        }
+      } catch (creditErr) {
+        console.error('Auto-credit error:', creditErr);
+      }
+    }
+
     res.json(order);
   } catch (err) {
     next(err);
