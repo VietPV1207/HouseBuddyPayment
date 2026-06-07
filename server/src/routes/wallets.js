@@ -79,6 +79,7 @@ router.post('/withdraw', async (req, res, next) => {
   try {
     const wallet = await Wallet.findById(wallet_id);
     if (!wallet) return res.status(404).json({ message: 'Wallet not found' });
+    if (wallet.wallet_type === 'credit') return res.status(400).json({ message: 'Không được phép rút từ Ví Tín Dụng' });
     if (wallet.balance < amount) return res.status(400).json({ message: 'Insufficient balance' });
     wallet.balance -= amount;
     wallet.last_update = new Date();
@@ -98,6 +99,22 @@ router.post('/deposit', async (req, res, next) => {
   try {
     const wallet = await Wallet.findById(wallet_id);
     if (!wallet) return res.status(404).json({ message: 'Wallet not found' });
+
+    if (wallet.wallet_type === 'credit') {
+      const personalWallet = await Wallet.findOne({ owner_id: wallet.owner_id, owner_model: wallet.owner_model, wallet_type: 'personal' }).sort({ _id: 1 });
+      if (!personalWallet) return res.status(400).json({ message: 'Không tìm thấy Ví Cá Nhân để chuyển tiền' });
+      if (personalWallet.balance < amount) return res.status(400).json({ message: 'Ví Cá Nhân không đủ số dư để chuyển vào Ví Tín Dụng' });
+      if (wallet.balance + amount > 200000) return res.status(400).json({ message: 'Ví Tín Dụng chỉ được phép có tối đa 200.000' });
+      personalWallet.balance -= amount;
+      personalWallet.last_update = new Date();
+      await personalWallet.save();
+      wallet.balance += amount;
+      wallet.last_update = new Date();
+      await wallet.save();
+      const transaction = await Transaction.create({ wallet_source_id: personalWallet._id, wallet_target_id: wallet_id, amount, transaction_type: 'income', status: 'success', order_id: null });
+      return res.status(201).json({ wallet, transaction });
+    }
+
     wallet.balance += amount;
     wallet.last_update = new Date();
     await wallet.save();
