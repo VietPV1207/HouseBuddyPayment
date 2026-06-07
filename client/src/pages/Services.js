@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { getWorkers, getServices, updateWorker } from '../api';
+import { useAuth } from '../AuthContext';
 
 function Services() {
+  const { user } = useAuth();
   const [workers, setWorkers] = useState([]);
   const [services, setServices] = useState([]);
-  const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [worker, setWorker] = useState(null);
   const [skills, setSkills] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState('');
@@ -24,11 +25,12 @@ function Services() {
   }, []);
 
   useEffect(() => {
-    if (!selectedWorkerId) return;
-    const w = workers.find(x => x._id === selectedWorkerId);
+    const workerId = user?.role === 'worker' ? user.id : null;
+    if (!workerId) return;
+    const w = workers.find(x => x._id === workerId);
     setWorker(w || null);
     setSkills(w?.skills ? w.skills.map(s => typeof s === 'object' ? s._id : s) : []);
-  }, [selectedWorkerId, workers]);
+  }, [workers, user]);
 
   const addSkill = () => {
     if (!selectedServiceId) return;
@@ -42,8 +44,10 @@ function Services() {
   };
 
   const save = async () => {
+    const workerId = user?.role === 'worker' ? user.id : null;
+    if (!workerId) return;
     try {
-      await updateWorker(selectedWorkerId, { skills });
+      await updateWorker(workerId, { skills });
       setMessage('Saved');
     } catch (e) {
       setMessage('Save failed');
@@ -58,12 +62,7 @@ function Services() {
   return (
     <div className="services">
       <h2>Manage Services (Skills)</h2>
-      <label>Select Worker</label>
-      <select value={selectedWorkerId} onChange={e => setSelectedWorkerId(e.target.value)}>
-        <option value="">-- choose worker --</option>
-        {workers.map(w => <option key={w._id} value={w._id}>{w.full_name}</option>)}
-      </select>
-      {worker && (
+      {user?.role === 'worker' && worker && (
         <div className="skills">
           <h4>{worker.full_name}'s services</h4>
           <div className="skill-list">
@@ -82,6 +81,7 @@ function Services() {
           {message && <p>{message}</p>}
         </div>
       )}
+      {user?.role !== 'worker' && <p>Only workers can manage their services.</p>}
     </div>
   );
 }
