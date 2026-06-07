@@ -5,12 +5,49 @@ const Order = require('../models/Order');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+router.get('/my', async (req, res, next) => {
+  try {
+    const { worker_id, status } = req.query;
+    const query = {};
+    if (worker_id && isValidId(worker_id)) query.worker_id = worker_id;
+    if (status) query.status = status;
+    const orders = await Order.find(query).populate('customer_id').populate('worker_id').populate('service_id');
+    res.json(orders);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/pending-count/:worker_id', async (req, res, next) => {
+  const { worker_id } = req.params;
+  if (!isValidId(worker_id)) return res.status(400).json({ message: 'Invalid worker id' });
+  try {
+    const count = await Order.countDocuments({ worker_id, status: { $in: ['pending', 'assigned'] } });
+    res.json({ count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/:id/status', async (req, res, next) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ message: 'Invalid order id' });
+  const { status } = req.body;
+  const allowed = ['accepted', 'in_progress', 'completed', 'cancelled'];
+  if (!allowed.includes(status)) return res.status(400).json({ message: 'Invalid status' });
+  try {
+    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true }).populate('customer_id').populate('worker_id').populate('service_id');
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
-    const { status, worker_id } = req.query;
+    const { worker_id, status } = req.query;
     const query = {};
     if (status) query.status = status;
-    if (worker_id && isValidId(worker_id)) query.worker_id = worker_id;
     const orders = await Order.find(query).populate('customer_id').populate('worker_id').populate('service_id');
     res.json(orders);
   } catch (err) {
@@ -43,7 +80,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ message: 'Invalid order id' });
   try {
-    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('customer_id').populate('worker_id').populate('service_id');
     if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json(order);
   } catch (err) {

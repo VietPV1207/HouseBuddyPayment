@@ -4,7 +4,7 @@ const orderSchema = new mongoose.Schema({
   customer_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
   worker_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Worker' },
   service_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
-  status: { type: String, enum: ['pending', 'in_progress', 'completed', 'cancelled'], default: 'pending' },
+  status: { type: String, enum: ['pending', 'assigned', 'accepted', 'in_progress', 'completed', 'cancelled'], default: 'pending' },
   payment_method: { type: String, enum: ['cash', 'e-wallet'], default: 'cash' },
   amount: { type: Number, required: true, min: 0 },
   created_at: { type: Date, default: Date.now },
