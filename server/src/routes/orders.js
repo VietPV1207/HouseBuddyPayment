@@ -228,9 +228,11 @@ router.post('/', async (req, res, next) => {
     if (order.payment_method === 'e-wallet' && order.amount && order.amount > 0) {
       paymentData = await createPayOSPayment(order);
       if (paymentData) {
+        const orderCode = parseInt(order._id.toString().substring(0, 10), 16);
         await Order.findByIdAndUpdate(order._id, { 
           payment_link: paymentData.checkoutUrl,
-          payment_status: 'pending'
+          payment_status: 'pending',
+          orderCode
         });
       }
     }

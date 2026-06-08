@@ -4,7 +4,12 @@ const cors = require('cors');
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+// capture raw body for webhook signature verification while still parsing JSON
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 app.use('/api/workers', require('./routes/workers'));
 app.use('/api/customers', require('./routes/customers'));
