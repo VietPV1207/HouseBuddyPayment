@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import { getMyOrders, updateOrderStatus } from '../api';
+import { QRCodeCanvas } from 'qrcode.react';
 
 function Orders() {
   const { user } = useAuth();
   const workerId = user?.id || '';
   const [orders, setOrders] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
+  const [qrOrder, setQrOrder] = useState(null);
 
   const fetchOrders = async () => {
     try {
@@ -19,14 +21,17 @@ function Orders() {
 
   useEffect(() => { fetchOrders(); }, [workerId, activeTab]);
 
-  const handleStatus = async (orderId, status) => {
+  const handleStatus = async (orderId, status, role = 'worker') => {
     try {
-      await updateOrderStatus(orderId, status);
+      await updateOrderStatus(orderId, status, role);
       fetchOrders();
     } catch (e) {
       alert('Update failed');
     }
   };
+
+  const showQR = (order) => setQrOrder(order);
+  const closeQR = () => setQrOrder(null);
 
   return (
     <div className="orders">
@@ -60,10 +65,15 @@ function Orders() {
                 <td>{order.amount?.toLocaleString()}</td>
                 <td>{order.status}</td>
                 <td>
-                  {order.status === 'pending' && <button onClick={() => handleStatus(order._id, 'assigned')}>Nhận đơn</button>}
-                  {order.status === 'assigned' && <button onClick={() => handleStatus(order._id, 'accepted')}>Xác nhận</button>}
-                  {(order.status === 'accepted' || order.status === 'assigned') && <button onClick={() => handleStatus(order._id, 'in_progress')}>Bắt đầu</button>}
-                  {order.status === 'in_progress' && <button onClick={() => handleStatus(order._id, 'completed')}>Hoàn thành</button>}
+                  {order.status === 'assigned' && <button onClick={() => handleStatus(order._id, 'accepted')}>Accept</button>}
+                  {order.status === 'accepted' && <button onClick={() => handleStatus(order._id, 'in_progress')}>Bắt đầu</button>}
+                  {order.status === 'in_progress' && (
+                    <>
+                      {!order.worker_confirmed && <button onClick={() => handleStatus(order._id, 'completed', 'worker')}>Xác nhận hoàn thành</button>}
+                      {!order.customer_confirmed && <span style={{ marginLeft: 8 }}>(Chờ khách hàng xác nhận)</span>}
+                    </>
+                  )}
+                  {order.status === 'pending' && <button onClick={() => showQR(order)}>QR Code</button>}
                 </td>
               </tr>
             ))}
@@ -71,6 +81,22 @@ function Orders() {
           </tbody>
         </table>
       </div>
+
+      {qrOrder && (
+        <div className="modal">
+          <div className="modal-content">
+            <h3>QR Code Đơn Hàng</h3>
+            <p>Mã đơn: {qrOrder._id}</p>
+            <p>Khách hàng: {qrOrder.customer_id?.full_name}</p>
+            <p>Dịch vụ: {qrOrder.service_id?.service_name}</p>
+            <p>Số tiền: {qrOrder.amount?.toLocaleString()}</p>
+            <div style={{ margin: '20px 0', textAlign: 'center' }}>
+              <QRCodeCanvas value={JSON.stringify({ orderId: qrOrder._id, amount: qrOrder.amount })} size={200} />
+            </div>
+            <button onClick={closeQR}>Đóng</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

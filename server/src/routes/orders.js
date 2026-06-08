@@ -21,6 +21,17 @@ router.get('/my', async (req, res, next) => {
   }
 });
 
+router.get('/customer/:customer_id', async (req, res, next) => {
+  const { customer_id } = req.params;
+  if (!isValidId(customer_id)) return res.status(400).json({ message: 'Invalid customer id' });
+  try {
+    const orders = await Order.find({ customer_id }).populate('customer_id').populate('worker_id').populate('service_id');
+    res.json(orders);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/pending-count/:worker_id', async (req, res, next) => {
   const { worker_id } = req.params;
   if (!isValidId(worker_id)) return res.status(400).json({ message: 'Invalid worker id' });
@@ -34,40 +45,57 @@ router.get('/pending-count/:worker_id', async (req, res, next) => {
 
 router.patch('/:id/status', async (req, res, next) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ message: 'Invalid order id' });
-  const { status } = req.body;
+  const { status, role } = req.body;
   const allowed = ['accepted', 'in_progress', 'completed', 'cancelled'];
   if (!allowed.includes(status)) return res.status(400).json({ message: 'Invalid status' });
   try {
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true }).populate('customer_id').populate('worker_id').populate('service_id');
+    const order = await Order.findById(req.params.id).populate('customer_id').populate('worker_id').populate('service_id');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    if (status === 'completed' && order.worker_id && order.amount) {
-      try {
-        const worker = await Worker.findById(order.worker_id._id || order.worker_id);
-        if (worker) {
-          const walletIds = [worker.wallet_credit_id, worker.wallet_personal_id].filter(Boolean);
-          for (const walletId of walletIds) {
-            const wallet = await Wallet.findById(walletId);
-            if (wallet) {
-              wallet.balance += order.amount;
-              wallet.last_update = new Date();
-              await wallet.save();
-              await Transaction.create({
-                wallet_source_id: null,
-                wallet_target_id: walletId,
-                amount: order.amount,
-                transaction_type: 'income',
-                order_id: order._id,
-                status: 'success'
-              });
+    // Handle confirmation flow for completion
+    if (status === 'completed' && role) {
+      if (role === 'worker') {
+        order.worker_confirmed = true;
+      } else if (role === 'customer') {
+        order.customer_confirmed = true;
+      }
+      
+      // Only mark as completed when both parties confirm
+      if (order.worker_confirmed && order.customer_confirmed) {
+        order.status = 'completed';
+        order.completed_at = new Date();
+        
+        // Auto credit 20% to worker personal wallet
+        if (order.worker_id && order.amount) {
+          try {
+            const worker = await Worker.findById(order.worker_id._id || order.worker_id);
+            if (worker && worker.wallet_personal_id) {
+              const wallet = await Wallet.findById(worker.wallet_personal_id);
+              if (wallet) {
+                const creditAmount = order.amount * 0.2;
+                wallet.balance += creditAmount;
+                wallet.last_update = new Date();
+                await wallet.save();
+                await Transaction.create({
+                  wallet_source_id: null,
+                  wallet_target_id: worker.wallet_personal_id,
+                  amount: creditAmount,
+                  transaction_type: 'income',
+                  order_id: order._id,
+                  status: 'success'
+                });
+              }
             }
+          } catch (creditErr) {
+            console.error('Auto-credit error:', creditErr);
           }
         }
-      } catch (creditErr) {
-        console.error('Auto-credit error:', creditErr);
       }
+    } else {
+      order.status = status;
     }
 
+    await order.save();
     res.json(order);
   } catch (err) {
     next(err);
@@ -100,9 +128,28 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   if (!req.body || Object.keys(req.body).length === 0) return res.status(400).json({ message: 'Body is required' });
   try {
-    const order = new Order(req.body);
+    const orderData = { ...req.body };
+    if (!orderData.status) orderData.status = 'assigned';
+    
+    // Auto-assign worker if worker_id not provided
+    if (!orderData.worker_id && orderData.service_id) {
+      const Service = require('../models/Service');
+      const service = await Service.findById(orderData.service_id);
+      if (service) {
+        const availableWorkers = await Worker.find({ 
+          skills: orderData.service_id, 
+          status: 'active' 
+        }).limit(1);
+        if (availableWorkers.length > 0) {
+          orderData.worker_id = availableWorkers[0]._id;
+        }
+      }
+    }
+    
+    const order = new Order(orderData);
     await order.save();
-    res.status(201).json(order);
+    const populatedOrder = await Order.findById(order._id).populate('customer_id').populate('worker_id').populate('service_id');
+    res.status(201).json(populatedOrder);
   } catch (err) {
     next(err);
   }

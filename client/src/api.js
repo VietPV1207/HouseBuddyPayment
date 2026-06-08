@@ -9,8 +9,10 @@ export const getWorkers = () => api.get('/workers');
 export const getServices = () => api.get('/services');
 
 export const getMyOrders = (workerId, status) => api.get(`/orders/my`, { params: { worker_id: workerId, status } });
+export const getOrdersByCustomer = (customerId) => api.get(`/orders/customer/${customerId}`);
 export const getPendingCount = (workerId) => api.get(`/orders/pending-count/${workerId}`);
-export const updateOrderStatus = (orderId, status) => api.patch(`/orders/${orderId}/status`, { status });
+export const updateOrderStatus = (orderId, status, role) => api.patch(`/orders/${orderId}/status`, { status, role });
+export const createOrder = (data) => api.post('/orders', data);
 
 export const getWorkerWallets = (workerId) => api.get(`/wallets/worker/${workerId}`);
 export const getWalletHistory = (walletId) => api.get(`/wallets/history/${walletId}`);

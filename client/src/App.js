@@ -9,6 +9,8 @@ import Workers from './pages/Workers';
 import WorkerLayout from './pages/WorkerLayout';
 import Home from './pages/Home';
 import Login from './pages/Login';
+import CreateOrder from './pages/CreateOrder';
+import CustomerOrders from './pages/CustomerOrders';
 import { useAuth } from './AuthContext';
 import './App.css';
 
@@ -25,6 +27,7 @@ function App() {
               <Link to="/customers">Customers</Link>
               <Link to="/workers">Workers</Link>
               <Link to="/worker/dashboard">Worker</Link>
+              <Link to="/create-order">Tạo đơn</Link>
               <button onClick={logout} className="logout-btn">Logout ({user.name})</button>
             </>
           ) : (
@@ -43,6 +46,8 @@ function App() {
             <Route path="/worker/wallet" element={<Wallet workerId={user?.id} />} />
             <Route path="/worker/services" element={<Services />} />
           </Route>
+          <Route path="/create-order" element={user ? <CreateOrder /> : <Navigate to="/login" />} />
+          <Route path="/customer/orders" element={user && user.role === 'customer' ? <CustomerOrders /> : <Navigate to="/login" />} />
           <Route path="/" element={user && user.role === 'customer' ? <Home /> : <Login />} />
         </Routes>
       </main>
