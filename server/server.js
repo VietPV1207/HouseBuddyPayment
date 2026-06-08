@@ -12,6 +12,7 @@ connectDB();
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Mount routes
 app.use('/api/workers', require('./src/routes/workers'));

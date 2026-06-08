@@ -2,14 +2,22 @@ const express = require('express');
 const router = express.Router();
 const PayOS = require('@payos/node').PayOS;
 const Order = require('../models/Order');
-const Wallet = require('../models/Wallet');
-const Transaction = require('../models/Transaction');
+
 const crypto = require('crypto');
 
-const isValidId = (id) => {
+function isValidId(id) {
   const mongoose = require('mongoose');
   return mongoose.Types.ObjectId.isValid(id);
-};
+}
+
+function createSignature(data) {
+  const keys = ['amount', 'cancelUrl', 'description', 'orderCode', 'returnUrl'];
+  const signatureString = keys
+    .filter((key) => data[key] !== undefined)
+    .map((key) => `${key}=${data[key]}`)
+    .join('&');
+  return crypto.createHmac('sha256', process.env.PAYOS_CHECKSUM_KEY).update(signatureString).digest('hex');
+}
 
 function getPayOSClient() {
   if (!process.env.PAYOS_CLIENT_ID || !process.env.PAYOS_API_KEY || !process.env.PAYOS_CHECKSUM_KEY) {
@@ -57,11 +65,14 @@ router.post('/checkout', async (req, res, next) => {
       cancelUrl: `${process.env.CLIENT_URL || 'http://localhost:3000'}/orders/${order._id}?status=cancelled`
     };
 
+    paymentRequestData.signature = createSignature(paymentRequestData);
+
     const paymentLink = await payOS.paymentRequests.create(paymentRequestData);
     
     await Order.findByIdAndUpdate(order_id, { 
       payment_link: paymentLink.checkoutUrl,
-      payment_status: 'pending'
+      payment_status: 'pending',
+      orderCode
     });
 
     res.json({
@@ -73,38 +84,94 @@ router.post('/checkout', async (req, res, next) => {
   }
 });
 
+// router.post('/webhook', async (req, res) => {
+//   try {
+//     const payload = req.body;
+//     const payOS = getPayOSClient();
+
+//     if (!payOS) {
+//       console.error('PayOS not configured');
+//       return res.json({ success: true });
+//     }
+
+//     // verify signature using PayOS SDK
+//     let webhookData;
+//     try {
+//       webhookData = await payOS.webhooks.verify(payload);
+//     } catch (verifyError) {
+//       console.error('Invalid signature', { error: verifyError.message, payload });
+//       return res.json({ success: true });
+//     }
+
+//     // tìm order bằng orderCode
+//     const order = await Order.findOne({ orderCode: webhookData.data.orderCode });
+//     if (!order) {
+//       console.error('Order not found', { orderCode: webhookData.data.orderCode });
+//       return res.json({ success: true });
+//     }
+
+//     if (webhookData.data.status === 'PAID') {
+//       order.payment_status = 'paid';
+//       order.status = 'assigned';
+//     } else if (webhookData.data.status === 'CANCELLED') {
+//       order.payment_status = 'cancelled';
+//       order.status = 'cancelled';
+//     }
+
+//     await order.save();
+//     res.json({ success: true });
+//   } catch (err) {
+//     console.error('Webhook error:', err);
+//     res.json({ success: true });
+//   }
+// });
+
 router.post('/webhook', async (req, res) => {
   try {
-    const { data, signature } = req.body;
-    const checksumKey = process.env.PAYOS_CHECKSUM_KEY;
+    const payload = req.body;
+    const payOS = getPayOSClient();
 
-    // verify signature
-    const sortedJson = JSON.stringify(data, Object.keys(data).sort());
-    const computedSignature = crypto.createHmac('sha256', checksumKey)
-                                    .update(sortedJson)
-                                    .digest('hex');
-    if (computedSignature !== signature) {
-      return res.status(401).json({ message: 'Invalid signature' });
+    if (!payOS) {
+      console.error('PayOS not configured');
+      return res.status(500).json({ success: false, message: 'PayOS not configured' });
+    }
+
+    // verify signature using PayOS SDK
+    let webhookData;
+    try {
+      webhookData = await payOS.webhooks.verify(payload);
+    } catch (verifyError) {
+      console.error('Invalid signature', { error: verifyError.message });
+      return res.status(400).json({ success: false, message: 'Invalid signature' });
     }
 
     // tìm order bằng orderCode
-    const order = await Order.findOne({ orderCode: data.orderCode });
-    if (!order) return res.status(404).json({ message: 'Order not found' });
+    const order = await Order.findOne({ orderCode: webhookData.data.orderCode });
+    if (!order) {
+      console.error('Order not found', { orderCode: webhookData.data.orderCode });
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
 
-    if (data.status === 'PAID') {
-      order.payment_status = 'paid';
-      order.status = 'assigned';
-      // cộng tiền vào ví công ty...
-    } else if (data.status === 'CANCELLED') {
-      order.payment_status = 'cancelled';
-      order.status = 'cancelled';
+    // cập nhật trạng thái thanh toán
+    switch (webhookData.data.status) {
+      case 'PAID':
+        order.payment_status = 'paid';
+        order.status = 'assigned';
+        break;
+      case 'CANCELLED':
+        order.payment_status = 'cancelled';
+        order.status = 'cancelled';
+        break;
+      default:
+        console.warn('Unhandled status', webhookData.data.status);
     }
 
     await order.save();
-    res.json({ success: true });
+
+    return res.status(200).json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Webhook error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 

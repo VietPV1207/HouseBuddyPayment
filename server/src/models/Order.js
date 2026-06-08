@@ -8,6 +8,7 @@ const orderSchema = new mongoose.Schema({
   payment_method: { type: String, enum: ['cash', 'e-wallet'], default: 'cash' },
   payment_status: { type: String, enum: ['pending', 'paid', 'cancelled'], default: 'pending' },
   payment_link: { type: String },
+  orderCode: { type: Number, unique: true, sparse: true },
   amount: { type: Number, required: true, min: 0 },
   customer_confirmed: { type: Boolean, default: false },
   worker_confirmed: { type: Boolean, default: false },
