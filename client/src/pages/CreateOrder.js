@@ -8,8 +8,11 @@ function CreateOrder() {
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [amount, setAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [message, setMessage] = useState('');
   const [createdOrder, setCreatedOrder] = useState(null);
+  const [paymentUrl, setPaymentUrl] = useState('');
+  const [qrCode, setQrCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -44,11 +47,16 @@ function CreateOrder() {
         customer_id: user.id,
         service_id: selectedServiceId,
         amount: Number(amount),
-        payment_method: 'cash'
+        payment_method: paymentMethod
       };
       
       const res = await createOrder(orderData);
       setCreatedOrder(res.data);
+      
+      if (paymentMethod === 'e-wallet' && res.data.payment_url) {
+        setPaymentUrl(res.data.payment_url);
+        setQrCode(res.data.qr_code || '');
+      }
       setMessage('');
     } catch (e) {
       setMessage('Tạo đơn thất bại');
@@ -57,7 +65,9 @@ function CreateOrder() {
     }
   };
 
-  const closeQR = () => {
+  const closePayment = () => {
+    setPaymentUrl('');
+    setQrCode('');
     setCreatedOrder(null);
   };
 
@@ -81,23 +91,35 @@ function CreateOrder() {
             <label>Số tiền:</label>
             <input type="number" value={amount} readOnly />
           </div>
+          <div className="form-group">
+            <label>Phương thức thanh toán:</label>
+            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+              <option value="cash">Tiền mặt</option>
+              <option value="e-wallet">Ví điện tử (PayOS)</option>
+            </select>
+          </div>
           <button onClick={handleCreateOrder} disabled={loading}>Tạo đơn</button>
           {message && <p>{message}</p>}
         </div>
       )}
       {user?.role !== 'customer' && <p>Chỉ khách hàng mới có thể tạo đơn.</p>}
 
-      {createdOrder && (
+      {paymentUrl && (
         <div className="modal">
           <div className="modal-content">
-            <h3>QR Code Đơn Hàng</h3>
-            <p>Mã đơn: {createdOrder._id}</p>
-            <p>Dịch vụ: {createdOrder.service_id?.service_name}</p>
-            <p>Số tiền: {createdOrder.amount?.toLocaleString()}</p>
-            <div style={{ margin: '20px 0', textAlign: 'center' }}>
-              <QRCodeCanvas value={JSON.stringify({ orderId: createdOrder._id, amount: createdOrder.amount })} size={200} />
-            </div>
-            <button onClick={closeQR}>Đóng</button>
+            <h3>Thanh toán PayOS</h3>
+            <p>Mã đơn: {createdOrder?._id?.slice(-6)}</p>
+            <p>Số tiền: {createdOrder?.amount?.toLocaleString()}</p>
+            {qrCode && (
+              <div style={{ margin: '20px 0', textAlign: 'center' }}>
+                <QRCodeCanvas value={qrCode} size={200} />
+              </div>
+            )}
+            <a href={paymentUrl} target="_blank" rel="noopener noreferrer" className="pay-button">
+              Thanh toán ngay
+            </a>
+            <br />
+            <button onClick={closePayment}>Đóng</button>
           </div>
         </div>
       )}

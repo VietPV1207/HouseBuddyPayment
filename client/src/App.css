@@ -423,3 +423,14 @@ select {
 .modal-content button {
   margin-top: 16px;
 }
+
+.pay-button {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: #2e7d32;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 4px;
+  font-weight: 600;
+}

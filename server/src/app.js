@@ -12,6 +12,7 @@ app.use('/api/wallets', require('./routes/wallets'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/services', require('./routes/services'));
+app.use('/api/payments', require('./routes/payments'));
 
 app.get('/', (req, res) => {
   res.json({ message: 'HouseBuddy API' });

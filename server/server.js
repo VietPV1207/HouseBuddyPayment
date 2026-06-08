@@ -20,6 +20,7 @@ app.use('/api/wallets', require('./src/routes/wallets'));
 app.use('/api/orders', require('./src/routes/orders'));
 app.use('/api/transactions', require('./src/routes/transactions'));
 app.use('/api/services', require('./src/routes/services'));
+app.use('/api/payments', require('./src/routes/payments'));
 
 app.get('/', (req, res) => {
   res.json({ message: 'HouseBuddy API is running' });

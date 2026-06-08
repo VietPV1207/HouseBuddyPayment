@@ -4,9 +4,46 @@ const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Wallet = require('../models/Wallet');
 const Worker = require('../models/Worker');
+const Service = require('../models/Service');
 const Transaction = require('../models/Transaction');
+const PayOS = require('@payos/node').PayOS;
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+async function createPayOSPayment(order) {
+  try {
+    if (!process.env.PAYOS_CLIENT_ID || !process.env.PAYOS_API_KEY) {
+      return null;
+    }
+    
+    const orderCode = parseInt(order._id.toString().substring(0, 10), 16);
+    const service = await Service.findById(order.service_id);
+    
+    const paymentRequestData = {
+      orderCode,
+      amount: order.amount,
+      description: `TT don ${order._id.toString().substring(0, 5)}`,
+      items: [{
+        name: service?.service_name || 'Dich vu',
+        quantity: 1,
+        price: order.amount
+      }],
+      returnUrl: `${process.env.CLIENT_URL || 'http://localhost:3000'}/orders?status=success`,
+      cancelUrl: `${process.env.CLIENT_URL || 'http://localhost:3000'}/orders?status=cancelled`
+    };
+    
+    const payOS = new PayOS({
+      clientId: process.env.PAYOS_CLIENT_ID,
+      apiKey: process.env.PAYOS_API_KEY,
+      checksumKey: process.env.PAYOS_CHECKSUM_KEY,
+    });
+    
+    return await payOS.paymentRequests.create(paymentRequestData);
+  } catch (err) {
+    console.error('PayOS payment creation error:', err);
+    return null;
+  }
+}
 
 router.get('/my', async (req, res, next) => {
   try {
@@ -145,19 +182,18 @@ router.post('/', async (req, res, next) => {
   if (!req.body || Object.keys(req.body).length === 0) return res.status(400).json({ message: 'Body is required' });
   try {
     const orderData = { ...req.body };
-    if (!orderData.status) orderData.status = 'assigned';
+    if (!orderData.status) orderData.status = 'pending';
     
     // Auto-assign worker if worker_id not provided
     if (!orderData.worker_id && orderData.service_id) {
-      const Service = require('../models/Service');
-      const service = await Service.findById(orderData.service_id);
-      if (service) {
-        const availableWorkers = await Worker.find({ 
-          skills: orderData.service_id, 
-          status: 'active' 
-        }).limit(1);
-        if (availableWorkers.length > 0) {
-          orderData.worker_id = availableWorkers[0]._id;
+      const availableWorkers = await Worker.find({ 
+        skills: orderData.service_id, 
+        status: 'active' 
+      }).limit(1);
+      if (availableWorkers.length > 0) {
+        orderData.worker_id = availableWorkers[0]._id;
+        if (orderData.payment_method === 'cash') {
+          orderData.status = 'assigned';
         }
       }
     }
@@ -165,7 +201,8 @@ router.post('/', async (req, res, next) => {
     const order = new Order(orderData);
     await order.save();
     
-    if (order.amount && order.amount > 0) {
+    // For cash payments, add to company wallet immediately
+    if (order.payment_method === 'cash' && order.amount && order.amount > 0) {
       try {
         const companyWallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
         if (companyWallet) {
@@ -186,8 +223,27 @@ router.post('/', async (req, res, next) => {
       }
     }
     
+    // For e-wallet payments, create PayOS link
+    let paymentData = null;
+    if (order.payment_method === 'e-wallet' && order.amount && order.amount > 0) {
+      paymentData = await createPayOSPayment(order);
+      if (paymentData) {
+        await Order.findByIdAndUpdate(order._id, { 
+          payment_link: paymentData.checkoutUrl,
+          payment_status: 'pending'
+        });
+      }
+    }
+    
     const populatedOrder = await Order.findById(order._id).populate('customer_id').populate('worker_id').populate('service_id');
-    res.status(201).json(populatedOrder);
+    
+    const response = {
+      ...populatedOrder.toObject(),
+      payment_url: paymentData?.checkoutUrl || null,
+      qr_code: paymentData?.qrCode || null
+    };
+    
+    res.status(201).json(response);
   } catch (err) {
     next(err);
   }
