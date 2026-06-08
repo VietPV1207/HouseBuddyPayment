@@ -73,137 +73,38 @@ router.post('/checkout', async (req, res, next) => {
   }
 });
 
-router.post('/webhook', async (req, res, next) => {
+router.post('/webhook', async (req, res) => {
   try {
-    const webhookBody = req.body;
-    
-    if (!webhookBody) {
-      return res.status(400).json({ message: 'Invalid webhook data' });
-    }
-
-    const signature = req.headers['x-payos-signature'];
+    const { data, signature } = req.body;
     const checksumKey = process.env.PAYOS_CHECKSUM_KEY;
-    
-    if (!signature || !checksumKey) {
-      return res.status(401).json({ message: 'Missing signature or checksum key' });
-    }
 
-    const webhookData = webhookBody.data || webhookBody;
-    
-    if (!webhookData.orderCode && !webhookData.status) {
-      return res.status(400).json({ message: 'Invalid webhook data' });
-    }
-
-    const payload = { ...webhookData };
-    delete payload.id;
-    
-    const signatureData = JSON.stringify(payload, Object.keys(payload).sort());
-    const computedSignature = crypto.createHmac('sha256', checksumKey).update(signatureData).digest('hex');
-    
+    // verify signature
+    const sortedJson = JSON.stringify(data, Object.keys(data).sort());
+    const computedSignature = crypto.createHmac('sha256', checksumKey)
+                                    .update(sortedJson)
+                                    .digest('hex');
     if (computedSignature !== signature) {
       return res.status(401).json({ message: 'Invalid signature' });
     }
 
-    const description = webhookData.description || '';
-    const orderMatch = description.match(/(?:don|order)\s*([a-f0-9]{24})/i);
-    
-    let order = null;
-    if (orderMatch && orderMatch[1]) {
-      order = await Order.findById(orderMatch[1]);
-    }
-    
-    if (!order && webhookData.orderId) {
-      order = await Order.findById(webhookData.orderId);
-    }
+    // tìm order bằng orderCode
+    const order = await Order.findOne({ orderCode: data.orderCode });
+    if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    if (!order) {
-      const orderCodeHex = webhookData.orderCode.toString(16).padStart(24, '0');
-      order = await Order.findById(orderCodeHex);
-    }
-
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    const paymentStatus = webhookData.status;
-
-    if (paymentStatus === 'PAID' || paymentStatus === 'paid' || paymentStatus === 'SUCCESS') {
+    if (data.status === 'PAID') {
       order.payment_status = 'paid';
       order.status = 'assigned';
-
-      const companyWallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
-      if (companyWallet && order.amount) {
-        companyWallet.balance += order.amount;
-        companyWallet.last_update = new Date();
-        await companyWallet.save();
-
-        await Transaction.create({
-          wallet_source_id: null,
-          wallet_target_id: companyWallet._id,
-          amount: order.amount,
-          transaction_type: 'income',
-          order_id: order._id,
-          status: 'success'
-        });
-      }
-    } else if (paymentStatus === 'CANCELLED' || paymentStatus === 'cancelled') {
+      // cộng tiền vào ví công ty...
+    } else if (data.status === 'CANCELLED') {
       order.payment_status = 'cancelled';
+      order.status = 'cancelled';
     }
 
-  await order.save();
-  res.json({ success: true });
-} catch (err) {
-  next(err);
-}
-});
-
-// Debug: chi tiết lỗi verify PayOS mà không chặn webhook chính
-router.post('/webhook/verify-debug', async (req, res) => {
-  try {
-    if (!req.body?.data) return res.status(400).json({ message: 'Missing data' });
-    const payOS = getPayOSClient();
-    if (!payOS) return res.status(500).json({ message: 'PayOS not configured' });
-
-    const { data, signature } = req.body;
-    const headersSig = req.headers['x-payos-signature'];
-    const payloadForSort = { ...data };
-    delete payloadForSort.id;
-    const sortedJson = JSON.stringify(payloadForSort, Object.keys(payloadForSort).sort());
-    const manualSig = require('crypto').createHmac('sha256', process.env.PAYOS_CHECKSUM_KEY).update(sortedJson).digest('hex');
-
-    let sdkVerify = null;
-    try {
-      sdkVerify = await payOS.webhooks.verify(req.body);
-    } catch (e) {
-      sdkVerify = `PayOS verify error: ${e.message}`;
-    }
-
-    res.json({
-      result: {
-        headerSignature: headersSig,
-        bodySignature: signature,
-        manualSignature: manualSig,
-        sdkVerifyResult: sdkVerify,
-        sampleData: data,
-      }
-    });
+    await order.save();
+    res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Debug: generate HMAC signature for a given payload
-router.post('/webhook/signature-debug', async (req, res) => {
-  try {
-    const { payload, checksumKey } = req.body;
-    if (!payload || !checksumKey) {
-      return res.status(400).json({ message: 'payload and checksumKey are required' });
-    }
-    const data = JSON.stringify(payload, Object.keys(payload).sort());
-    const computed = crypto.createHmac('sha256', checksumKey).update(data).digest('hex');
-    res.json({ data, computed });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
