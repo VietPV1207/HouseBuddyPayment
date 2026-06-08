@@ -7,6 +7,25 @@ const Worker = require('../models/Worker');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+router.get('/company-wallet', async (req, res, next) => {
+  try {
+    let wallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
+    if (!wallet) {
+      const companyWalletId = new mongoose.Types.ObjectId('000000000000000000000001');
+      wallet = await Wallet.create({
+        _id: companyWalletId,
+        wallet_type: 'corporate',
+        balance: 0,
+        owner_id: companyWalletId,
+        owner_model: 'Company'
+      });
+    }
+    res.json(wallet);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/worker/:worker_id', async (req, res, next) => {
   const { worker_id } = req.params;
   if (!isValidId(worker_id)) return res.status(400).json({ message: 'Invalid worker id' });

@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import Login from './pages/Login';
 import CreateOrder from './pages/CreateOrder';
 import CustomerOrders from './pages/CustomerOrders';
+import CompanyWallet from './pages/CompanyWallet';
 import { useAuth } from './AuthContext';
 import './App.css';
 
@@ -20,7 +21,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>HouseBuddy Payment</h1>
+        <Link to="/"><h1>HouseBuddy Payment</h1></Link>
         <nav>
           {user ? (
             <>
@@ -28,6 +29,7 @@ function App() {
               <Link to="/workers">Workers</Link>
               <Link to="/worker/dashboard">Worker</Link>
               <Link to="/create-order">Tạo đơn</Link>
+              <Link to="/company-wallet">Ví công ty</Link>
               <button onClick={logout} className="logout-btn">Logout ({user.name})</button>
             </>
           ) : (
@@ -47,6 +49,7 @@ function App() {
             <Route path="/worker/services" element={<Services />} />
           </Route>
           <Route path="/create-order" element={user ? <CreateOrder /> : <Navigate to="/login" />} />
+          <Route path="/company-wallet" element={user ? <CompanyWallet /> : <Navigate to="/login" />} />
           <Route path="/customer/orders" element={user && user.role === 'customer' ? <CustomerOrders /> : <Navigate to="/login" />} />
           <Route path="/" element={user && user.role === 'customer' ? <Home /> : <Login />} />
         </Routes>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { getOrdersByCustomer, updateOrderStatus } from '../api';
 
@@ -38,6 +39,7 @@ function CustomerOrders() {
   return (
     <div className="customer-orders">
       <h2>Đơn hàng của tôi</h2>
+      <Link to="/"><button style={{ marginRight: 10 }}>Quay về Home</button></Link>
       {message && <p>{message}</p>}
       <div className="table-container">
         <table>

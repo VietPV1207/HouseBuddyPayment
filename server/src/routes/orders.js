@@ -65,29 +65,45 @@ router.patch('/:id/status', async (req, res, next) => {
         order.status = 'completed';
         order.completed_at = new Date();
         
-        // Auto credit 20% to worker personal wallet
         if (order.worker_id && order.amount) {
           try {
             const worker = await Worker.findById(order.worker_id._id || order.worker_id);
-            if (worker && worker.wallet_personal_id) {
-              const wallet = await Wallet.findById(worker.wallet_personal_id);
-              if (wallet) {
-                const creditAmount = order.amount * 0.2;
-                wallet.balance += creditAmount;
-                wallet.last_update = new Date();
-                await wallet.save();
+            if (!worker) throw new Error('Worker not found');
+            
+            const companyWallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
+            if (!companyWallet) throw new Error('Company wallet not found');
+            
+            if (worker.wallet_personal_id) {
+              const workerWallet = await Wallet.findById(worker.wallet_personal_id);
+              if (workerWallet) {
+                const workerAmount = order.amount * 0.8;
+                const feeAmount = order.amount * 0.2;
+                
+                workerWallet.balance += workerAmount;
+                workerWallet.last_update = new Date();
+                await workerWallet.save();
+                
                 await Transaction.create({
-                  wallet_source_id: null,
+                  wallet_source_id: companyWallet._id,
                   wallet_target_id: worker.wallet_personal_id,
-                  amount: creditAmount,
+                  amount: workerAmount,
                   transaction_type: 'income',
+                  order_id: order._id,
+                  status: 'success'
+                });
+                
+                await Transaction.create({
+                  wallet_source_id: companyWallet._id,
+                  wallet_target_id: companyWallet._id,
+                  amount: feeAmount,
+                  transaction_type: 'fee',
                   order_id: order._id,
                   status: 'success'
                 });
               }
             }
           } catch (creditErr) {
-            console.error('Auto-credit error:', creditErr);
+            console.error('Payment distribution error:', creditErr);
           }
         }
       }
@@ -148,6 +164,28 @@ router.post('/', async (req, res, next) => {
     
     const order = new Order(orderData);
     await order.save();
+    
+    if (order.amount && order.amount > 0) {
+      try {
+        const companyWallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
+        if (companyWallet) {
+          companyWallet.balance += order.amount;
+          companyWallet.last_update = new Date();
+          await companyWallet.save();
+          await Transaction.create({
+            wallet_source_id: null,
+            wallet_target_id: companyWallet._id,
+            amount: order.amount,
+            transaction_type: 'income',
+            order_id: order._id,
+            status: 'success'
+          });
+        }
+      } catch (paymentErr) {
+        console.error('Payment processing error:', paymentErr);
+      }
+    }
+    
     const populatedOrder = await Order.findById(order._id).populate('customer_id').populate('worker_id').populate('service_id');
     res.status(201).json(populatedOrder);
   } catch (err) {

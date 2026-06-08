@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
-import { getWorkers, getServices, createOrder } from '../api';
+import { getServices, createOrder } from '../api';
 import { QRCodeCanvas } from 'qrcode.react';
 
 function CreateOrder() {
   const { user } = useAuth();
-  const [workers, setWorkers] = useState([]);
   const [services, setServices] = useState([]);
-  const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [amount, setAmount] = useState('');
   const [message, setMessage] = useState('');
@@ -15,10 +13,18 @@ function CreateOrder() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (selectedServiceId) {
+      const service = services.find(s => s._id === selectedServiceId);
+      if (service) {
+        setAmount(service.base_price || 0);
+      }
+    }
+  }, [selectedServiceId, services]);
+
+  useEffect(() => {
     const fetchData = async () => {
       try {
-        const [workersRes, servicesRes] = await Promise.all([getWorkers(), getServices()]);
-        setWorkers(workersRes.data);
+        const servicesRes = await getServices();
         setServices(servicesRes.data);
       } catch (e) {
         console.error(e);
@@ -40,7 +46,6 @@ function CreateOrder() {
         amount: Number(amount),
         payment_method: 'cash'
       };
-      if (selectedWorkerId) orderData.worker_id = selectedWorkerId;
       
       const res = await createOrder(orderData);
       setCreatedOrder(res.data);
@@ -66,13 +71,6 @@ function CreateOrder() {
             <input type="text" value={user?.full_name || user?.name || user?.id} readOnly />
           </div>
           <div className="form-group">
-            <label>Chọn Worker (không bắt buộc):</label>
-            <select value={selectedWorkerId} onChange={e => setSelectedWorkerId(e.target.value)}>
-              <option value="">-- Chọn worker --</option>
-              {workers.map(w => <option key={w._id} value={w._id}>{w.full_name} - {w.skills?.map(s => s.service_name).join(', ')}</option>)}
-            </select>
-          </div>
-          <div className="form-group">
             <label>Chọn dịch vụ:</label>
             <select value={selectedServiceId} onChange={e => setSelectedServiceId(e.target.value)}>
               <option value="">-- Chọn dịch vụ --</option>
@@ -81,7 +79,7 @@ function CreateOrder() {
           </div>
           <div className="form-group">
             <label>Số tiền:</label>
-            <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Nhập số tiền" />
+            <input type="number" value={amount} readOnly />
           </div>
           <button onClick={handleCreateOrder} disabled={loading}>Tạo đơn</button>
           {message && <p>{message}</p>}

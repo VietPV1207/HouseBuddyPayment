@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 const Worker = require('./src/models/Worker');
 const Service = require('./src/models/Service');
+const Wallet = require('./src/models/Wallet');
 
 const services = [
   { service_name: 'Dọn nhà', description: 'Dọn dẹp nhà cửa', price: 200000 },
@@ -27,6 +28,21 @@ async function seed() {
   }));
   await Worker.insertMany(workersWithSkills);
   console.log('Seeded workers and services');
+  
+  // Create company wallet if not exists
+  const companyWalletExists = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
+  if (!companyWalletExists) {
+    const companyWalletId = new mongoose.Types.ObjectId('000000000000000000000001');
+    await Wallet.create({
+      _id: companyWalletId,
+      wallet_type: 'corporate',
+      balance: 0,
+      owner_id: companyWalletId,
+      owner_model: 'Company'
+    });
+    console.log('Seeded company wallet');
+  }
+  
   await mongoose.connection.close();
 }
 

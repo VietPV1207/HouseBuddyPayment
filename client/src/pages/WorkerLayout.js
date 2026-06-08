@@ -11,7 +11,6 @@ function WorkerLayout() {
           <Link to="/worker/orders">Orders</Link>
           <Link to="/worker/wallet">Wallet</Link>
           <Link to="/worker/services">Services</Link>
-          <Link to="/">Home</Link>
         </nav>
       </aside>
       <main className="content">

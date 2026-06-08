@@ -15,6 +15,7 @@ export const updateOrderStatus = (orderId, status, role) => api.patch(`/orders/$
 export const createOrder = (data) => api.post('/orders', data);
 
 export const getWorkerWallets = (workerId) => api.get(`/wallets/worker/${workerId}`);
+export const getCompanyWallet = () => api.get('/wallets/company-wallet');
 export const getWalletHistory = (walletId) => api.get(`/wallets/history/${walletId}`);
 export const withdraw = (walletId, amount) => api.post('/wallets/withdraw', { wallet_id: walletId, amount });
 export const deposit = (walletId, amount) => api.post('/wallets/deposit', { wallet_id: walletId, amount });
