@@ -1,36 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const Wallet = require('../models/Wallet');
-const Transaction = require('../models/Transaction');
-const Worker = require('../models/Worker');
+const Wallet = require('../models/wallet.model');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-router.get('/company-wallet', async (req, res, next) => {
+router.get('/user/:userId', async (req, res, next) => {
+  const { userId } = req.params;
+  if (!isValidId(userId)) return res.status(400).json({ message: 'Invalid user id' });
   try {
-    let wallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
-    if (!wallet) {
-      const companyWalletId = new mongoose.Types.ObjectId('000000000000000000000001');
-      wallet = await Wallet.create({
-        _id: companyWalletId,
-        wallet_type: 'corporate',
-        balance: 0,
-        owner_id: companyWalletId,
-        owner_model: 'Company'
-      });
-    }
-    res.json(wallet);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get('/worker/:worker_id', async (req, res, next) => {
-  const { worker_id } = req.params;
-  if (!isValidId(worker_id)) return res.status(400).json({ message: 'Invalid worker id' });
-  try {
-    const wallets = await Wallet.find({ owner_id: worker_id, owner_model: 'Worker' });
+    const query = { userId };
+    if (req.query.walletType) query.walletType = req.query.walletType;
+    const wallets = await Wallet.find(query);
     res.json(wallets);
   } catch (err) {
     next(err);
@@ -51,11 +32,16 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   if (!req.body || Object.keys(req.body).length === 0) return res.status(400).json({ message: 'Body is required' });
   try {
+    if (!req.body.userId) return res.status(400).json({ message: 'userId is required' });
+    if (!req.body.walletType) return res.status(400).json({ message: 'walletType is required' });
     const wallet = new Wallet(req.body);
     await wallet.save();
     res.status(201).json(wallet);
   } catch (err) {
-    next(err);
+    const msg = err.code === 11000
+      ? 'Wallet already exists for this user'
+      : err.message || 'Error creating wallet';
+    next(Object.assign(new Error(msg), { status: 400 }));
   }
 });
 
@@ -81,65 +67,36 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-router.get('/history/:wallet_id', async (req, res, next) => {
-  if (!isValidId(req.params.wallet_id)) return res.status(400).json({ message: 'Invalid wallet id' });
+router.post('/deposit', async (req, res, next) => {
+  const { userId, walletType, amount } = req.body;
+  if (!isValidId(userId)) return res.status(400).json({ message: 'Invalid user id' });
+  if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
   try {
-    const transactions = await Transaction.find({ $or: [{ wallet_source_id: req.params.wallet_id }, { wallet_target_id: req.params.wallet_id }] }).sort({ timestamp: -1 });
-    res.json(transactions);
+    let wallet = await Wallet.findOne({ userId, walletType });
+    if (!wallet) {
+      wallet = await Wallet.create({ userId, walletType: walletType || 'personal', balance: 0 });
+    }
+    wallet.balance += amount;
+    wallet.lastUpdate = new Date();
+    await wallet.save();
+    res.status(201).json(wallet);
   } catch (err) {
     next(err);
   }
 });
 
 router.post('/withdraw', async (req, res, next) => {
-  const { wallet_id, amount } = req.body;
-  if (!isValidId(wallet_id)) return res.status(400).json({ message: 'Invalid wallet id' });
+  const { userId, walletType, amount } = req.body;
+  if (!isValidId(userId)) return res.status(400).json({ message: 'Invalid user id' });
   if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
   try {
-    const wallet = await Wallet.findById(wallet_id);
+    const wallet = await Wallet.findOne({ userId, walletType });
     if (!wallet) return res.status(404).json({ message: 'Wallet not found' });
-    if (wallet.wallet_type === 'credit') return res.status(400).json({ message: 'Không được phép rút từ Ví Tín Dụng' });
     if (wallet.balance < amount) return res.status(400).json({ message: 'Insufficient balance' });
     wallet.balance -= amount;
-    wallet.last_update = new Date();
+    wallet.lastUpdate = new Date();
     await wallet.save();
-    const transaction = new Transaction({ wallet_source_id: wallet_id, wallet_target_id: null, amount, transaction_type: 'fee', status: 'success' });
-    await transaction.save();
-    res.status(201).json({ wallet, transaction });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post('/deposit', async (req, res, next) => {
-  const { wallet_id, amount } = req.body;
-  if (!isValidId(wallet_id)) return res.status(400).json({ message: 'Invalid wallet id' });
-  if (typeof amount !== 'number' || amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
-  try {
-    const wallet = await Wallet.findById(wallet_id);
-    if (!wallet) return res.status(404).json({ message: 'Wallet not found' });
-
-    if (wallet.wallet_type === 'credit') {
-      const personalWallet = await Wallet.findOne({ owner_id: wallet.owner_id, owner_model: wallet.owner_model, wallet_type: 'personal' }).sort({ _id: 1 });
-      if (!personalWallet) return res.status(400).json({ message: 'Không tìm thấy Ví Cá Nhân để chuyển tiền' });
-      if (personalWallet.balance < amount) return res.status(400).json({ message: 'Ví Cá Nhân không đủ số dư để chuyển vào Ví Tín Dụng' });
-      if (wallet.balance + amount > 200000) return res.status(400).json({ message: 'Ví Tín Dụng chỉ được phép có tối đa 200.000' });
-      personalWallet.balance -= amount;
-      personalWallet.last_update = new Date();
-      await personalWallet.save();
-      wallet.balance += amount;
-      wallet.last_update = new Date();
-      await wallet.save();
-      const transaction = await Transaction.create({ wallet_source_id: personalWallet._id, wallet_target_id: wallet_id, amount, transaction_type: 'income', status: 'success', order_id: null });
-      return res.status(201).json({ wallet, transaction });
-    }
-
-    wallet.balance += amount;
-    wallet.last_update = new Date();
-    await wallet.save();
-    const transaction = new Transaction({ wallet_source_id: null, wallet_target_id: wallet_id, amount, transaction_type: 'income', status: 'success', order_id: null });
-    await transaction.save();
-    res.status(201).json({ wallet, transaction });
+    res.status(201).json(wallet);
   } catch (err) {
     next(err);
   }

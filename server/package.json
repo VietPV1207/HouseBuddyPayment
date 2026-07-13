@@ -1,7 +1,7 @@
 {
   "name": "housebuddy-server",
   "version": "1.0.0",
-  "main": "src/app.js",
+  "main": "server.js",
   "dependencies": {
     "@payos/node": "^2.0.5",
     "cors": "^2.8.0",

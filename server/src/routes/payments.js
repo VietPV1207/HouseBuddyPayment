@@ -1,13 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const PayOS = require("@payos/node").PayOS;
-const Order = require("../models/Order");
-const Wallet = require("../models/Wallet");
-const Transaction = require("../models/Transaction");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
+const Booking = require("../models/bookings.model");
+const PaymentRecord = require("../models/paymentRecords.model");
+const Wallet = require("../models/wallet.model");
 
 function isValidId(id) {
-  const mongoose = require("mongoose");
   return mongoose.Types.ObjectId.isValid(id);
 }
 
@@ -38,19 +38,23 @@ function getPayOSClient() {
   });
 }
 
+function generateOrderCode(booking) {
+  return parseInt(booking._id.toString().substring(0, 10), 16);
+}
+
 router.post("/checkout", async (req, res, next) => {
   try {
-    const { order_id } = req.body;
+    const { booking_id } = req.body;
 
-    if (!order_id || !isValidId(order_id)) {
-      return res.status(400).json({ message: "Valid order_id is required" });
+    if (!booking_id || !isValidId(booking_id)) {
+      return res.status(400).json({ message: "Valid booking_id is required" });
     }
 
-    const order = await Order.findById(order_id)
-      .populate("customer_id")
-      .populate("service_id");
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+    const booking = await Booking.findById(booking_id)
+      .populate("customerId")
+      .populate("serviceId");
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
     }
 
     const payOS = getPayOSClient();
@@ -58,9 +62,9 @@ router.post("/checkout", async (req, res, next) => {
       return res.status(500).json({ message: "PayOS not configured" });
     }
 
-    const orderCode = parseInt(order._id.toString().substring(0, 10), 16);
-    const amount = order.amount;
-    const description = `TT ${order._id.toString().substring(0, 8)}`;
+    const orderCode = generateOrderCode(booking);
+    const amount = booking.totalAmount;
+    const description = `TT ${booking._id.toString().substring(0, 8)}`;
 
     const paymentRequestData = {
       orderCode,
@@ -68,26 +72,32 @@ router.post("/checkout", async (req, res, next) => {
       description,
       items: [
         {
-          name: order.service_id?.service_name || "Dich vu",
+          name: booking.serviceId?.packageName || booking.serviceId?.categoryName || "Dich vu",
           quantity: 1,
           price: amount,
         },
       ],
-      returnUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/orders/${order._id}?status=success`,
-      cancelUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/orders/${order._id}?status=cancelled`,
+      returnUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/orders/${booking._id}?status=success`,
+      cancelUrl: `${process.env.CLIENT_URL || "http://localhost:3000"}/orders/${booking._id}?status=cancelled`,
     };
 
     const paymentLink = await payOS.paymentRequests.create(paymentRequestData);
 
-    await Order.findByIdAndUpdate(order_id, {
-      payment_link: paymentLink.checkoutUrl,
-      payment_status: "pending",
-      orderCode,
+    booking.orderCode = orderCode;
+    booking.status = "PENDING";
+    await booking.save();
+
+    const paymentRecord = await PaymentRecord.create({
+      bookingId: booking._id,
+      transactionId: String(orderCode),
+      paymentStatus: "pending",
+      amount,
     });
 
     res.json({
       checkoutUrl: paymentLink.checkoutUrl,
       qrCode: paymentLink.qrCode,
+      paymentRecordId: paymentRecord._id,
     });
   } catch (err) {
     next(err);
@@ -100,11 +110,9 @@ router.post("/webhook", async (req, res) => {
 
     if (!payOS) {
       console.error("PayOS not configured");
-      // Return 200 so external validators don't mark the webhook as invalid
       return res.status(200).json({ success: true, message: 'PayOS not configured' });
     }
 
-    // Use raw body when available to allow HMAC verification against exact bytes
     const raw = req.rawBody ? req.rawBody.toString() : null;
     let webhookData = null;
     try {
@@ -116,11 +124,9 @@ router.post("/webhook", async (req, res) => {
       console.log("Webhook verified data:", webhookData);
     } catch (verifyError) {
       console.error("Webhook signature verification failed", verifyError && verifyError.message);
-      // Avoid returning 4xx/5xx which would make PayOS consider the webhook invalid
       return res.status(200).json({ success: true });
     }
 
-    // Normalize payload fields
     const orderCode = webhookData?.data?.orderCode || webhookData?.orderCode || webhookData?.data?.order_code || webhookData?.order_code;
     const status = webhookData?.data?.status || webhookData?.status;
 
@@ -129,57 +135,57 @@ router.post("/webhook", async (req, res) => {
       return res.status(200).json({ success: true });
     }
 
-    const order = await Order.findOne({ orderCode });
-    if (!order) {
-      console.error("Order not found", { orderCode });
+    const booking = await Booking.findOne({ orderCode });
+    if (!booking) {
+      console.error("Booking not found", { orderCode });
       return res.status(200).json({ success: true });
     }
 
     if (status === "PAID") {
       // idempotent: only update/credit if not already paid
-      if (order.payment_status !== 'paid') {
-        order.payment_status = 'paid';
-        order.status = 'assigned';
+      if (booking.status !== "PAID") {
+        booking.status = "PAID";
+        await booking.save();
+
+        const record = await PaymentRecord.findOne({ bookingId: booking._id, paymentStatus: { $ne: "completed" } });
+        if (record) {
+          record.paymentStatus = "completed";
+          await record.save();
+        }
 
         try {
-          if (order.amount && order.amount > 0) {
-            const existing = await Transaction.findOne({ order_id: order._id, transaction_type: 'income', status: 'success' });
-            if (!existing) {
-              const companyWallet = await Wallet.findOne({ wallet_type: 'corporate', owner_model: 'Company' });
-              if (companyWallet) {
-                companyWallet.balance = (companyWallet.balance || 0) + order.amount;
-                companyWallet.last_update = new Date();
-                await companyWallet.save();
-
-                await Transaction.create({
-                  wallet_source_id: null,
-                  wallet_target_id: companyWallet._id,
-                  amount: order.amount,
-                  transaction_type: 'income',
-                  order_id: order._id,
-                  status: 'success'
-                });
-              } else {
-                console.error('Company wallet not found to credit payment for order', order._id);
-              }
+          if (booking.totalAmount && booking.totalAmount > 0 && booking.helperId) {
+            const existing = await Wallet.findOne({ userId: booking.helperId, walletType: "personal" });
+            if (existing) {
+              existing.balance = (existing.balance || 0) + booking.totalAmount;
+              existing.lastUpdate = new Date();
+              await existing.save();
             } else {
-              console.log('Payment already credited for order', order._id);
+              await Wallet.create({
+                userId: booking.helperId,
+                walletType: "personal",
+                balance: booking.totalAmount,
+                lastUpdate: new Date(),
+              });
             }
           }
         } catch (creditErr) {
-          console.error('Error crediting company wallet on webhook:', creditErr);
+          console.error("Error crediting helper wallet on webhook:", creditErr);
         }
       } else {
-        console.log('Order already marked paid', order._id.toString());
+        console.log("Booking already marked PAID", booking._id.toString());
       }
-    } else if (status === 'CANCELLED') {
-      order.payment_status = 'cancelled';
-      order.status = 'cancelled';
+    } else if (status === "CANCELLED") {
+      booking.status = "CANCELLED";
+      await booking.save();
+      await PaymentRecord.updateOne(
+        { bookingId: booking._id },
+        { paymentStatus: "failed" }
+      );
     } else {
-      console.warn('Unhandled webhook status', status);
+      console.warn("Unhandled webhook status", status);
     }
 
-    await order.save();
     return res.status(200).json({ success: true });
   } catch (err) {
     console.error("Webhook error:", err);

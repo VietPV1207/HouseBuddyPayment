@@ -1,61 +1,65 @@
-import React from 'react';
-import { Link, Route, Routes, Navigate } from 'react-router-dom';
-import Dashboard from './pages/Dashboard';
-import Orders from './pages/Orders';
-import Wallet from './pages/Wallet';
-import Services from './pages/Services';
-import Customers from './pages/Customers';
-import Workers from './pages/Workers';
-import WorkerLayout from './pages/WorkerLayout';
-import Home from './pages/Home';
-import Login from './pages/Login';
-import CreateOrder from './pages/CreateOrder';
-import CustomerOrders from './pages/CustomerOrders';
-import CompanyWallet from './pages/CompanyWallet';
-import { useAuth } from './AuthContext';
-import './App.css';
+import React from "react";
+import { Routes, Route, Navigate, Link, useNavigate } from "react-router-dom";
+import { useAuth } from "./AuthContext";
+import Login from "./pages/Login";
+import Home from "./pages/Home";
+import CreateOrder from "./pages/CreateOrder";
+import "./App.css";
 
-function App() {
+function RequireAuth({ children }) {
+  const { user } = useAuth();
+  return user ? children : <Navigate to="/login" replace />;
+}
+
+function Nav() {
   const { user, logout } = useAuth();
-
+  const navigate = useNavigate();
+  if (!user) return null;
   return (
-    <div className="App">
-      <header className="App-header">
-        <Link to="/"><h1>HouseBuddy Payment</h1></Link>
-        <nav>
-          {user ? (
-            <>
-              <Link to="/customers">Customers</Link>
-              <Link to="/workers">Workers</Link>
-              <Link to="/worker/dashboard">Worker</Link>
-              <Link to="/create-order">Tạo đơn</Link>
-              <Link to="/company-wallet">Ví công ty</Link>
-              <button onClick={logout} className="logout-btn">Logout ({user.name})</button>
-            </>
-          ) : (
-            <Link to="/login">Login</Link>
-          )}
-        </nav>
-      </header>
-      <main>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/customers" element={user ? <Customers /> : <Navigate to="/login" />} />
-          <Route path="/workers" element={user ? <Workers /> : <Navigate to="/login" />} />
-          <Route element={user && user.role === 'worker' ? <WorkerLayout /> : <Navigate to="/login" />}>
-            <Route path="/worker/dashboard" element={<Dashboard workerId={user?.id} />} />
-            <Route path="/worker/orders" element={<Orders workerId={user?.id} />} />
-            <Route path="/worker/wallet" element={<Wallet workerId={user?.id} />} />
-            <Route path="/worker/services" element={<Services />} />
-          </Route>
-          <Route path="/create-order" element={user ? <CreateOrder /> : <Navigate to="/login" />} />
-          <Route path="/company-wallet" element={user ? <CompanyWallet /> : <Navigate to="/login" />} />
-          <Route path="/customer/orders" element={user && user.role === 'customer' ? <CustomerOrders /> : <Navigate to="/login" />} />
-          <Route path="/" element={user && user.role === 'customer' ? <Home /> : <Login />} />
-        </Routes>
-      </main>
-    </div>
+    <nav className="app-nav">
+      <Link to="/">Home</Link>
+      {user.role === "customer" && <Link to="/create-order">Tạo đơn</Link>}
+      <button
+        className="logout-btn"
+        onClick={() => {
+          logout();
+          navigate("/login");
+        }}
+      >
+        Đăng xuất
+      </button>
+    </nav>
   );
 }
 
-export default App;
+export default function App() {
+  const { user } = useAuth();
+  return (
+    <div className="app">
+      <Nav />
+      <Routes>
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/" replace /> : <Login />}
+        />
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <Home />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/create-order"
+          element={
+            <RequireAuth>
+              <CreateOrder />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </div>
+  );
+}

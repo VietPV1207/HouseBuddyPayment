@@ -24,6 +24,22 @@ app.use('/api/transactions', require('./src/routes/transactions'));
 app.use('/api/services', require('./src/routes/services'));
 app.use('/api/payments', require('./src/routes/payments'));
 
+// New routes for redesigned models
+app.use('/api/vouchers', require('./src/routes/vouchers'));
+app.use('/api/gpoints', require('./src/routes/gpoints'));
+app.use('/api/helper-schedules', require('./src/routes/helperschedules'));
+app.use('/api/tasks', require('./src/routes/tasks'));
+app.use('/api/admin-profiles', require('./src/routes/adminprofiles'));
+app.use('/api/type-vouchers', require('./src/routes/typevouchers'));
+app.use('/api/user-accounts', require('./src/routes/useraccounts'));
+
+const errorHandler = (err, req, res, next) => {
+  console.error(err);
+  res.status(err.status || 500).json({ message: err.message || 'Internal Server Error' });
+};
+
+app.use(errorHandler);
+
 app.get('/', (req, res) => {
   res.json({ message: 'HouseBuddy API is running' });
 });
