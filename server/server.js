@@ -25,6 +25,7 @@ app.use('/api/vouchers', require('./src/routers/voucher.router'));
 app.use('/api/helpers', require('./src/routers/helper.router'));
 app.use('/api/customers', require('./src/routers/customer.router'));
 app.use('/api/admin-profiles', require('./src/routers/admin.router'));
+app.use('/api/bookings', require('./src/routers/booking.router'));
 
 const errorHandler = (err, req, res, next) => {
   console.error(err);
