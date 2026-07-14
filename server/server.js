@@ -15,23 +15,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/payments/webhook', express.raw({ type: '*/*' }));
 app.use(express.json());
 
-// Mount routes
-app.use('/api/workers', require('./src/routes/workers'));
-app.use('/api/customers', require('./src/routes/customers'));
-app.use('/api/wallets', require('./src/routes/wallets'));
-app.use('/api/orders', require('./src/routes/orders'));
-app.use('/api/transactions', require('./src/routes/transactions'));
-app.use('/api/services', require('./src/routes/services'));
-app.use('/api/payments', require('./src/routes/payments'));
-
-// New routes for redesigned models
-app.use('/api/vouchers', require('./src/routes/vouchers'));
-app.use('/api/gpoints', require('./src/routes/gpoints'));
-app.use('/api/helper-schedules', require('./src/routes/helperschedules'));
-app.use('/api/tasks', require('./src/routes/tasks'));
-app.use('/api/admin-profiles', require('./src/routes/adminprofiles'));
-app.use('/api/type-vouchers', require('./src/routes/typevouchers'));
-app.use('/api/user-accounts', require('./src/routes/useraccounts'));
+// Mount existing routers
+app.use('/api/auth', require('./src/routers/auth.router'));
+app.use('/api/payments', require('./src/routers/payment.router'));
+app.use('/api/payments', require('./src/routers/payosWebhook.router'));
+app.use('/api/payment-records', require('./src/routers/paymentRecord.router'));
+app.use('/api/wallets', require('./src/routers/wallet.router'));
+app.use('/api/vouchers', require('./src/routers/voucher.router'));
+app.use('/api/helpers', require('./src/routers/helper.router'));
+app.use('/api/customers', require('./src/routers/customer.router'));
+app.use('/api/admin-profiles', require('./src/routers/admin.router'));
 
 const errorHandler = (err, req, res, next) => {
   console.error(err);
