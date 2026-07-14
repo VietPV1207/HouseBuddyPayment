@@ -19,10 +19,11 @@ const verifyToken = async (req, res, next) => {
         if (!account) {
             return res.status(401).json({ message: 'Account not found.' });
         }
-        if (account.accountStatus !== 'active') {
-            return res.status(403).json({ message: 'Account is not active.' });
+        if (account.accountStatus === 'suspended') {
+            return res.status(403).json({ message: 'Account is suspended.' });
         }
 
+        req.accountStatus = account.accountStatus;
         next();
     } catch (error) {
         res.status(400).json({ message: 'Invalid token.' });

@@ -1,6 +1,33 @@
 const mongoose = require('mongoose');
 
 const helperProfileSchema = new mongoose.Schema({
+    fullName: {
+        type: String,
+        required: true
+    },
+    email: {
+        type: String,
+        required: true
+    },
+    bio: {
+        type: String,
+        maxlength: 500
+    },
+    avatarUrl: {
+        type: String
+    },
+    availability: {
+        type: String
+    },
+    age: {
+        type: Number
+    },
+    gender: {
+        type: String
+    },
+    address: {
+        type: String
+    },
     skills: [{
         type: String
     }],

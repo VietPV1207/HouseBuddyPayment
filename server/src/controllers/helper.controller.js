@@ -1,24 +1,42 @@
 const mongoose = require('mongoose');
 const HelperProfile = require('../models/helperProfile.model');
+const UserAccount = require('../models/userAccount.model');
 
 exports.updateHelperProfile = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { fullName, email, skills, identityVerified, identityDetails, rating, workStatus, currentZoneId, equipment } = req.body;
+        const { fullName, email, bio, avatarUrl, availability, skills, identityVerified, identityDetails, rating, workStatus, currentZoneId, equipment, age, gender, address } = req.body;
+
+        if (req.userId !== userId) {
+            return res.status(403).json({ message: 'You are not authorized to update this profile.' });
+        }
+
+        const account = await UserAccount.findById(req.userId);
+        if (!account || account.accountStatus !== 'active') {
+            return res.status(403).json({ message: 'Only active helpers can update their profile.' });
+        }
+
+        const updatePayload = {
+            fullName,
+            email,
+            bio,
+            avatarUrl,
+            availability,
+            skills,
+            identityVerified,
+            identityDetails,
+            rating,
+            workStatus,
+            currentZoneId,
+            equipment,
+            age,
+            gender,
+            address
+        };
 
         const profile = await HelperProfile.findOneAndUpdate(
             { _id: new mongoose.Types.ObjectId(userId) },
-            {
-                fullName,
-                email,
-                skills,
-                identityVerified,
-                identityDetails,
-                rating,
-                workStatus,
-                currentZoneId,
-                equipment
-            },
+            updatePayload,
             { new: true, runValidators: true }
         );
 
@@ -38,6 +56,10 @@ exports.updateHelperProfile = async (req, res) => {
 exports.getHelperProfile = async (req, res) => {
     try {
         const { userId } = req.params;
+
+        if (req.userId !== userId) {
+            return res.status(403).json({ message: 'You are not authorized to view this profile.' });
+        }
 
         const profile = await HelperProfile.findOne({ _id: new mongoose.Types.ObjectId(userId) });
 
