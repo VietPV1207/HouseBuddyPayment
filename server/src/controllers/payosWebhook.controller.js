@@ -26,11 +26,7 @@ function verifySignature(rawBody, signature) {
 
 exports.handlePayOSWebhook = async (req, res) => {
     const rawBody = getRawBody(req);
-    const signature =
-        req.headers['x-signature'] ||
-        req.headers['x-payos-signature'] ||
-        req.body?.signature ||
-        req.body?.data?.signature;
+    const signature = req.headers['x-signature'] || req.headers['x-payos-signature'];
 
     const signatureValid = verifySignature(rawBody, signature);
     if (!signatureValid) {
@@ -45,7 +41,14 @@ exports.handlePayOSWebhook = async (req, res) => {
     if (!signatureValid) return;
 
     try {
-        const payload = req.body;
+        let payload;
+        try {
+            payload = JSON.parse(rawBody.toString('utf8'));
+        } catch (parseError) {
+            console.error('[PayOS Webhook] Không thể parse raw body:', parseError);
+            return;
+        }
+
         const data = payload.data || payload;
         const bookingCode = data.orderCode || data.bookingCode;
         const status = String(data.status || payload.status || '').toUpperCase();
@@ -81,16 +84,27 @@ exports.handlePayOSWebhook = async (req, res) => {
                 });
             }
 
-            const corporateWallet = await Wallet.findOne({ walletType: 'corporate' });
+            let corporateWallet = await Wallet.findOne({ walletType: 'corporate' });
             if (!corporateWallet) {
-                console.error('[PayOS Webhook] Ví công ty (wallet_type="corporate") không tồn tại');
-            } else {
-                corporateWallet.balance = (corporateWallet.balance || 0) + booking.totalAmount;
-                corporateWallet.lastUpdate = new Date();
-                await corporateWallet.save();
+                corporateWallet = await Wallet.create({
+                    userId: new (require('mongoose').default)(),
+                    walletType: 'corporate',
+                    balance: 0
+                });
             }
+            corporateWallet.balance = (corporateWallet.balance || 0) + booking.totalAmount;
+            corporateWallet.lastUpdate = new Date();
+            await corporateWallet.save();
         } else if (status === 'CANCELLED') {
-            await Booking.findByIdAndUpdate(booking._id, { status: 'CANCELLED' });
+            if (booking.status !== 'PAID') {
+                await Booking.findByIdAndUpdate(booking._id, { status: 'CANCELLED' });
+            }
+        } else if (status === 'EXPIRED' || status === 'FAILED') {
+            if (booking.status === 'AWAITING_PAYMENT') {
+                await Booking.findByIdAndUpdate(booking._id, { status: 'DRAFT' });
+            }
+        } else {
+            console.log(`[PayOS Webhook] Trạng thái không xử lý: ${status}`);
         }
     } catch (error) {
         console.error('[PayOS Webhook] Lỗi xử lý webhook:', error);

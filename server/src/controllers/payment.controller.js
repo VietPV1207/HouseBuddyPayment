@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const payos = require('../utils/payos');
 const Booking = require('../models/bookings.model');
 
+const PAYOS_EXPIRED_STATUSES = new Set(['PAID', 'CANCELLED', 'FINISHED', 'REVIEWED']);
+
 exports.createPayment = async (req, res) => {
     try {
         const {
@@ -35,12 +37,21 @@ exports.createPayment = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy Booking' });
         }
 
+        if (PAYOS_EXPIRED_STATUSES.has(booking.status)) {
+            return res.status(400).json({ message: `Booking đã ở trạng thái ${booking.status}, không thể tạo thanh toán` });
+        }
+
+        if (Number(totalAmount) !== Number(booking.totalAmount)) {
+            return res.status(400).json({ message: 'totalAmount không khớp với booking.totalAmount' });
+        }
+
         let orderCode = booking.orderCode;
         if (!orderCode) {
             orderCode = Number(String(Date.now()).slice(-9));
             booking.orderCode = orderCode;
-            await booking.save();
         }
+        booking.status = 'AWAITING_PAYMENT';
+        await booking.save();
 
         const body = {
             orderCode,
